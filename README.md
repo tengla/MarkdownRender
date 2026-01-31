@@ -10,6 +10,7 @@ A native macOS command-line tool that renders Markdown files in a beautiful wind
 - **Syntax highlighting** - Code blocks with language-aware highlighting
 - **Dark/light mode** - Follows system appearance or manual override
 - **Live reload** - Watch mode for automatic refresh on file changes
+- **PDF export** - Export rendered documents to PDF (Cmd+E)
 - **Keyboard shortcuts** - Cmd+R (reload), Cmd+W (close), Cmd+±0 (zoom)
 
 ## Installation

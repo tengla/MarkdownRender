@@ -101,6 +101,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         let fileMenu = NSMenu(title: "File")
         fileMenu.addItem(withTitle: "Reload", action: #selector(reloadMarkdown), keyEquivalent: "r")
         fileMenu.addItem(NSMenuItem.separator())
+        fileMenu.addItem(withTitle: "Export as PDF...", action: #selector(exportPDF), keyEquivalent: "e")
+        fileMenu.addItem(NSMenuItem.separator())
         fileMenu.addItem(withTitle: "Close Window", action: #selector(window.close), keyEquivalent: "w")
         fileMenuItem.submenu = fileMenu
         mainMenu.addItem(fileMenuItem)
@@ -127,6 +129,59 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc func reloadMarkdown() {
         loadMarkdown()
+    }
+
+    @objc private func exportPDF() {
+        let savePanel = NSSavePanel()
+        savePanel.allowedContentTypes = [.pdf]
+        savePanel.nameFieldStringValue = fileURL.deletingPathExtension().lastPathComponent + ".pdf"
+        savePanel.title = "Export as PDF"
+        savePanel.message = "Choose a location to save the PDF"
+
+        savePanel.beginSheetModal(for: window) { [weak self] response in
+            guard response == .OK, let url = savePanel.url else { return }
+            self?.createPDF(at: url)
+        }
+    }
+
+    private func createPDF(at url: URL) {
+        let printInfo = NSPrintInfo()
+        printInfo.paperSize = NSSize(width: 612, height: 792) // US Letter
+        printInfo.topMargin = 36
+        printInfo.bottomMargin = 36
+        printInfo.leftMargin = 36
+        printInfo.rightMargin = 36
+        printInfo.isHorizontallyCentered = true
+        printInfo.isVerticallyCentered = false
+
+        let printOperation = webView.printOperation(with: printInfo)
+        printOperation.showsPrintPanel = false
+        printOperation.showsProgressPanel = true
+        printOperation.pdfPanel = NSPDFPanel()
+
+        // Use the modern PDF creation API
+        webView.createPDF(configuration: WKPDFConfiguration()) { [weak self] result in
+            switch result {
+            case .success(let data):
+                do {
+                    try data.write(to: url)
+                    // Open in Finder and select the file
+                    NSWorkspace.shared.activateFileViewerSelecting([url])
+                } catch {
+                    self?.showError("Failed to save PDF: \(error.localizedDescription)")
+                }
+            case .failure(let error):
+                self?.showError("Failed to create PDF: \(error.localizedDescription)")
+            }
+        }
+    }
+
+    private func showError(_ message: String) {
+        let alert = NSAlert()
+        alert.messageText = "Export Failed"
+        alert.informativeText = message
+        alert.alertStyle = .critical
+        alert.runModal()
     }
 
     @objc private func resetZoom() {
