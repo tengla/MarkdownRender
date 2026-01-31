@@ -1,0 +1,191 @@
+# https://taskfile.dev
+
+version: '3'
+
+vars:
+  BINARY_NAME: MarkdownRender
+  INSTALL_DIR: ~/bin
+
+tasks:
+  default:
+    desc: Show available tasks
+    cmds:
+      - task --list
+
+  # === Setup & Dependencies ===
+
+  setup:
+    desc: Install all prerequisites and dependencies
+    cmds:
+      - task: check-swift
+      - task: deps
+
+  check-swift:
+    desc: Check Swift toolchain is installed
+    cmds:
+      - |
+        if ! command -v swift &> /dev/null; then
+          echo "Swift not found. Install Xcode Command Line Tools:"
+          echo "  xcode-select --install"
+          exit 1
+        fi
+        echo "Swift version:"
+        swift --version
+    silent: false
+
+  deps:
+    desc: Fetch and resolve Swift package dependencies
+    cmds:
+      - swift package resolve
+    sources:
+      - Package.swift
+    generates:
+      - Package.resolved
+
+  update:
+    desc: Update dependencies to latest compatible versions
+    cmds:
+      - swift package update
+
+  clean:
+    desc: Remove build artifacts
+    cmds:
+      - swift package clean
+      - rm -rf .build
+
+  # === Build ===
+
+  build:
+    desc: Build debug version
+    deps: [deps]
+    cmds:
+      - swift build
+    sources:
+      - Sources/**/*.swift
+      - Package.swift
+    generates:
+      - .build/debug/{{.BINARY_NAME}}
+
+  build:release:
+    desc: Build optimized release version
+    deps: [deps]
+    cmds:
+      - swift build -c release
+    sources:
+      - Sources/**/*.swift
+      - Package.swift
+    generates:
+      - .build/release/{{.BINARY_NAME}}
+
+  # === Run ===
+
+  run:
+    desc: Run with sample.md
+    deps: [build]
+    cmds:
+      - swift run {{.BINARY_NAME}} sample.md
+
+  run:watch:
+    desc: Run with sample.md in watch mode
+    deps: [build]
+    cmds:
+      - swift run {{.BINARY_NAME}} --watch sample.md
+
+  run:graphviz:
+    desc: Run with graphviz-test.md
+    deps: [build]
+    cmds:
+      - swift run {{.BINARY_NAME}} graphviz-test.md
+
+  run:dark:
+    desc: Run with dark theme
+    deps: [build]
+    cmds:
+      - swift run {{.BINARY_NAME}} --theme dark sample.md
+
+  run:file:
+    desc: Run with a specific file (use -- path/to/file.md)
+    deps: [build]
+    cmds:
+      - swift run {{.BINARY_NAME}} {{.CLI_ARGS}}
+
+  # === Test ===
+
+  test:
+    desc: Run all tests
+    cmds:
+      - swift test
+
+  test:verbose:
+    desc: Run tests with verbose output
+    cmds:
+      - swift test --verbose
+
+  # === Install ===
+
+  install:
+    desc: Build release and install to ~/bin
+    deps: [build:release]
+    cmds:
+      - mkdir -p {{.INSTALL_DIR}}
+      - cp .build/release/{{.BINARY_NAME}} {{.INSTALL_DIR}}/
+      - echo "Installed {{.BINARY_NAME}} to {{.INSTALL_DIR}}"
+      - echo "Make sure {{.INSTALL_DIR}} is in your PATH"
+
+  uninstall:
+    desc: Remove from ~/bin
+    cmds:
+      - rm -f {{.INSTALL_DIR}}/{{.BINARY_NAME}}
+      - echo "Removed {{.BINARY_NAME}} from {{.INSTALL_DIR}}"
+
+  # === Development ===
+
+  xcode:
+    desc: Open project in Xcode
+    cmds:
+      - open Package.swift
+
+  format:
+    desc: Format Swift code (requires swift-format)
+    cmds:
+      - |
+        if command -v swift-format &> /dev/null; then
+          swift-format -i -r Sources/
+        else
+          echo "swift-format not found. Install with:"
+          echo "  brew install swift-format"
+          exit 1
+        fi
+
+  lint:
+    desc: Lint Swift code (requires SwiftLint)
+    cmds:
+      - |
+        if command -v swiftlint &> /dev/null; then
+          swiftlint
+        else
+          echo "SwiftLint not found. Install with:"
+          echo "  brew install swiftlint"
+          exit 1
+        fi
+
+  # === Info ===
+
+  info:
+    desc: Show project info
+    cmds:
+      - echo "Project:" {{.BINARY_NAME}}
+      - echo "Swift version:" && swift --version | head -1
+      - echo "Platform:" $(uname -s) $(uname -m)
+      - |
+        if [ -f .build/release/{{.BINARY_NAME}} ]; then
+          echo "Release binary:" $(ls -lh .build/release/{{.BINARY_NAME}} | awk '{print $5}')
+        else
+          echo "Release binary: not built"
+        fi
+
+  size:
+    desc: Show binary size
+    deps: [build:release]
+    cmds:
+      - ls -lh .build/release/{{.BINARY_NAME}}
