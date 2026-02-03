@@ -348,6 +348,86 @@ struct HTMLGenerator {
         """
     }
 
+    static func generateWelcomeHTML(theme: String) -> String {
+        return """
+        <!DOCTYPE html>
+        <html lang="en">
+        <head>
+            <meta charset="UTF-8">
+            <title>MarkdownRender</title>
+            <style>
+                body {
+                    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    height: 100vh;
+                    margin: 0;
+                    background-color: #f6f8fa;
+                    color: #24292f;
+                }
+                @media (prefers-color-scheme: dark) {
+                    body { background-color: #0d1117; color: #c9d1d9; }
+                }
+                .welcome-box {
+                    text-align: center;
+                    padding: 40px;
+                    max-width: 400px;
+                }
+                .app-icon {
+                    font-size: 64px;
+                    margin-bottom: 16px;
+                }
+                h1 {
+                    font-size: 24px;
+                    font-weight: 600;
+                    margin: 0 0 8px 0;
+                }
+                .tagline {
+                    color: #57606a;
+                    font-size: 14px;
+                    margin-bottom: 24px;
+                }
+                @media (prefers-color-scheme: dark) {
+                    .tagline { color: #8b949e; }
+                }
+                .hint {
+                    font-size: 13px;
+                    color: #57606a;
+                    background: rgba(0,0,0,0.04);
+                    padding: 12px 16px;
+                    border-radius: 8px;
+                    line-height: 1.5;
+                }
+                @media (prefers-color-scheme: dark) {
+                    .hint { color: #8b949e; background: rgba(255,255,255,0.04); }
+                }
+                kbd {
+                    background: rgba(0,0,0,0.08);
+                    padding: 2px 6px;
+                    border-radius: 4px;
+                    font-family: "SF Mono", monospace;
+                    font-size: 12px;
+                }
+                @media (prefers-color-scheme: dark) {
+                    kbd { background: rgba(255,255,255,0.1); }
+                }
+            </style>
+        </head>
+        <body>
+            <div class="welcome-box">
+                <div class="app-icon">📄</div>
+                <h1>MarkdownRender</h1>
+                <p class="tagline">Beautiful Markdown with Mermaid & Graphviz</p>
+                <div class="hint">
+                    Drag a <strong>.md</strong> file here or press <kbd>⌘O</kbd> to open
+                </div>
+            </div>
+        </body>
+        </html>
+        """
+    }
+
     static func generateErrorHTML(error: String) -> String {
         return """
         <!DOCTYPE html>
@@ -400,4 +480,5 @@ struct HTMLGenerator {
         </html>
         """
     }
+
 }

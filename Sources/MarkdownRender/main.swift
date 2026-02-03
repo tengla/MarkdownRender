@@ -8,7 +8,7 @@ struct MarkdownRender: ParsableCommand {
     )
 
     @Argument(help: "Path to the markdown file to render")
-    var file: String
+    var file: String?
 
     @Flag(name: .shortAndLong, help: "Watch file for changes and reload automatically")
     var watch: Bool = false
@@ -17,22 +17,28 @@ struct MarkdownRender: ParsableCommand {
     var theme: String = "auto"
 
     mutating func run() throws {
-        let fileURL = URL(fileURLWithPath: file).standardizedFileURL
+        var initialFileURL: URL? = nil
 
-        // Verify file exists
-        guard FileManager.default.fileExists(atPath: fileURL.path) else {
-            throw ValidationError("File not found: \(fileURL.path)")
-        }
+        if let file = file {
+            let fileURL = URL(fileURLWithPath: file).standardizedFileURL
 
-        // Verify it's a markdown file
-        let ext = fileURL.pathExtension.lowercased()
-        guard ["md", "markdown", "mdown", "mkd"].contains(ext) else {
-            throw ValidationError("File does not appear to be a markdown file: \(fileURL.lastPathComponent)")
+            // Verify file exists
+            guard FileManager.default.fileExists(atPath: fileURL.path) else {
+                throw ValidationError("File not found: \(fileURL.path)")
+            }
+
+            // Verify it's a markdown file
+            let ext = fileURL.pathExtension.lowercased()
+            guard ["md", "markdown", "mdown", "mkd"].contains(ext) else {
+                throw ValidationError("File does not appear to be a markdown file: \(fileURL.lastPathComponent)")
+            }
+
+            initialFileURL = fileURL
         }
 
         // Launch the app
         let app = NSApplication.shared
-        let delegate = AppDelegate(fileURL: fileURL, watchEnabled: watch, theme: theme)
+        let delegate = AppDelegate(fileURL: initialFileURL, watchEnabled: watch, theme: theme)
         app.delegate = delegate
         app.setActivationPolicy(.regular)
         app.run()

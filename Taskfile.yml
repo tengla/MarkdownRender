@@ -138,12 +138,48 @@ tasks:
       - rm -f {{.INSTALL_DIR}}/{{.BINARY_NAME}}
       - echo "Removed {{.BINARY_NAME}} from {{.INSTALL_DIR}}"
 
+  bundle:
+    desc: Create macOS .app bundle (SPM only, no Quick Look)
+    cmds:
+      - ./scripts/bundle-app.sh
+
+  bundle:install:
+    desc: Create .app bundle and copy to /Applications (SPM only)
+    deps: [bundle]
+    cmds:
+      - cp -r .build/release/{{.BINARY_NAME}}.app /Applications/
+      - echo "Installed {{.BINARY_NAME}}.app to /Applications"
+
+  # === Xcode Build (with Quick Look extension) ===
+
+  xcode:build:
+    desc: Build with Xcode (includes Quick Look extension)
+    cmds:
+      - xcodebuild -project MarkdownRender.xcodeproj -scheme MarkdownRender -configuration Release build
+
+  xcode:install:
+    desc: Build with Xcode and install to /Applications
+    deps: [xcode:build]
+    vars:
+      DERIVED_DATA:
+        sh: xcodebuild -project MarkdownRender.xcodeproj -scheme MarkdownRender -configuration Release -showBuildSettings 2>/dev/null | grep -m 1 'BUILT_PRODUCTS_DIR' | awk '{print $3}'
+    cmds:
+      - rm -rf /Applications/{{.BINARY_NAME}}.app
+      - cp -r "{{.DERIVED_DATA}}/{{.BINARY_NAME}}.app" /Applications/
+      - qlmanage -r
+      - echo "Installed {{.BINARY_NAME}}.app with Quick Look extension to /Applications"
+
+  xcode:clean:
+    desc: Clean Xcode build
+    cmds:
+      - xcodebuild -project MarkdownRender.xcodeproj -scheme MarkdownRender clean
+
   # === Development ===
 
   xcode:
     desc: Open project in Xcode
     cmds:
-      - open Package.swift
+      - open MarkdownRender.xcodeproj
 
   format:
     desc: Format Swift code (requires swift-format)
