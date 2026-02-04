@@ -17,6 +17,10 @@ let package = Package(
                 .product(name: "Markdown", package: "swift-markdown"),
                 .product(name: "ArgumentParser", package: "swift-argument-parser"),
             ],
+            exclude: [
+                "Info.plist",
+                "MarkdownRender.entitlements"
+            ],
             resources: [
                 .copy("Resources")
             ]
