@@ -1,0 +1,95 @@
+name: Release
+
+on:
+  release:
+    types: [published]
+
+jobs:
+  build-and-package:
+    runs-on: macos-15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Select Xcode
+        run: |
+          ls /Applications | grep Xcode || true
+          sudo xcode-select -s /Applications/Xcode_16.app/Contents/Developer || \
+          sudo xcode-select -s /Applications/Xcode_16.1.app/Contents/Developer || \
+          sudo xcode-select -s /Applications/Xcode_16.2.app/Contents/Developer
+
+      - name: Show Swift version
+        run: swift --version
+
+      - name: Build release
+        run: swift build -c release
+
+      - name: Create app bundle
+        run: |
+          # Create app bundle structure
+          APP_NAME="MarkdownRender"
+          APP_BUNDLE="$APP_NAME.app"
+
+          mkdir -p "$APP_BUNDLE/Contents/MacOS"
+          mkdir -p "$APP_BUNDLE/Contents/Resources"
+
+          # Copy binary
+          cp .build/release/MarkdownRender "$APP_BUNDLE/Contents/MacOS/"
+
+          # Copy Info.plist
+          cp Sources/MarkdownRender/Info.plist "$APP_BUNDLE/Contents/"
+
+          # Update version in Info.plist from release tag
+          VERSION="${GITHUB_REF_NAME#v}"
+          /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $VERSION" "$APP_BUNDLE/Contents/Info.plist" || true
+          /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $VERSION" "$APP_BUNDLE/Contents/Info.plist" || true
+
+          # Copy entitlements (for reference, not used in unsigned build)
+          cp Sources/MarkdownRender/MarkdownRender.entitlements "$APP_BUNDLE/Contents/Resources/" || true
+
+          # Copy icon if exists
+          if [ -d "Icon" ]; then
+            cp -r Icon/*.icns "$APP_BUNDLE/Contents/Resources/" 2>/dev/null || true
+          fi
+
+      - name: Create DMG
+        run: |
+          APP_NAME="MarkdownRender"
+          VERSION="${GITHUB_REF_NAME#v}"
+          DMG_NAME="${APP_NAME}-${VERSION}-macOS.dmg"
+
+          # Create a temporary directory for DMG contents
+          mkdir -p dmg_contents
+          cp -r "$APP_NAME.app" dmg_contents/
+
+          # Create symlink to Applications
+          ln -s /Applications dmg_contents/Applications
+
+          # Create DMG
+          hdiutil create -volname "$APP_NAME" \
+            -srcfolder dmg_contents \
+            -ov -format UDZO \
+            "$DMG_NAME"
+
+          echo "DMG_NAME=$DMG_NAME" >> $GITHUB_ENV
+
+      - name: Create ZIP archive
+        run: |
+          APP_NAME="MarkdownRender"
+          VERSION="${GITHUB_REF_NAME#v}"
+          ZIP_NAME="${APP_NAME}-${VERSION}-macOS.zip"
+
+          zip -r "$ZIP_NAME" "$APP_NAME.app"
+
+          echo "ZIP_NAME=$ZIP_NAME" >> $GITHUB_ENV
+
+      - name: Upload DMG to release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ${{ env.DMG_NAME }}
+
+      - name: Upload ZIP to release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ${{ env.ZIP_NAME }}
