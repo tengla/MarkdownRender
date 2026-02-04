@@ -33,6 +33,7 @@ jobs:
           # Create app bundle structure
           APP_NAME="MarkdownRender"
           APP_BUNDLE="$APP_NAME.app"
+          VERSION="${GITHUB_REF_NAME#v}"
 
           mkdir -p "$APP_BUNDLE/Contents/MacOS"
           mkdir -p "$APP_BUNDLE/Contents/Resources"
@@ -40,16 +41,65 @@ jobs:
           # Copy binary
           cp .build/release/MarkdownRender "$APP_BUNDLE/Contents/MacOS/"
 
-          # Copy Info.plist
-          cp Sources/MarkdownRender/Info.plist "$APP_BUNDLE/Contents/"
+          # Create Info.plist with resolved values
+          cat > "$APP_BUNDLE/Contents/Info.plist" << 'PLIST'
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+            <key>CFBundleDevelopmentRegion</key>
+            <string>en</string>
+            <key>CFBundleExecutable</key>
+            <string>MarkdownRender</string>
+            <key>CFBundleIconFile</key>
+            <string>AppIcon</string>
+            <key>CFBundleIdentifier</key>
+            <string>com.markdownrender.app</string>
+            <key>CFBundleInfoDictionaryVersion</key>
+            <string>6.0</string>
+            <key>CFBundleName</key>
+            <string>MarkdownRender</string>
+            <key>CFBundlePackageType</key>
+            <string>APPL</string>
+            <key>CFBundleShortVersionString</key>
+            <string>VERSION_PLACEHOLDER</string>
+            <key>CFBundleVersion</key>
+            <string>VERSION_PLACEHOLDER</string>
+            <key>LSMinimumSystemVersion</key>
+            <string>13.0</string>
+            <key>NSHighResolutionCapable</key>
+            <true/>
+            <key>NSSupportsAutomaticGraphicsSwitching</key>
+            <true/>
+            <key>CFBundleDocumentTypes</key>
+            <array>
+              <dict>
+                <key>CFBundleTypeName</key>
+                <string>Markdown Document</string>
+                <key>CFBundleTypeRole</key>
+                <string>Viewer</string>
+                <key>LSHandlerRank</key>
+                <string>Alternate</string>
+                <key>LSItemContentTypes</key>
+                <array>
+                  <string>net.daringfireball.markdown</string>
+                  <string>public.text</string>
+                </array>
+                <key>CFBundleTypeExtensions</key>
+                <array>
+                  <string>md</string>
+                  <string>markdown</string>
+                  <string>mdown</string>
+                  <string>mkd</string>
+                </array>
+              </dict>
+            </array>
+          </dict>
+          </plist>
+          PLIST
 
-          # Update version in Info.plist from release tag
-          VERSION="${GITHUB_REF_NAME#v}"
-          /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $VERSION" "$APP_BUNDLE/Contents/Info.plist" || true
-          /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $VERSION" "$APP_BUNDLE/Contents/Info.plist" || true
-
-          # Copy entitlements (for reference, not used in unsigned build)
-          cp Sources/MarkdownRender/MarkdownRender.entitlements "$APP_BUNDLE/Contents/Resources/" || true
+          # Replace version placeholder
+          sed -i '' "s/VERSION_PLACEHOLDER/$VERSION/g" "$APP_BUNDLE/Contents/Info.plist"
 
           # Copy icon if exists
           if [ -d "Icon" ]; then
