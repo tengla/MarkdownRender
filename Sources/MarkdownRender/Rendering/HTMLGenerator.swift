@@ -27,7 +27,8 @@ struct HTMLGenerator {
             <!-- Highlight.js for code syntax highlighting -->
             <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github.min.css" media="(prefers-color-scheme: light)">
             <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github-dark.min.css" media="(prefers-color-scheme: dark)">
-            <script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/common.min.js"></script>
+            <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+            <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/swift.min.js"></script>
 
             <script>
                 // Initialize Mermaid
@@ -66,7 +67,215 @@ struct HTMLGenerator {
                             hljs.highlightElement(block);
                         });
                     }
+
+                    // Setup diagram zoom wrappers
+                    window.diagramZoom.init();
                 });
+
+                // Diagram zoom module for pinch-to-zoom on Mermaid and Graphviz diagrams
+                window.diagramZoom = (function() {
+                    const MIN_SCALE = 0.5;
+                    const MAX_SCALE = 4.0;
+
+                    // Per-diagram state using WeakMap
+                    const diagramState = new WeakMap();
+
+                    // Track active diagram during gestures
+                    let activePinchDiagram = null;
+                    let activePanDiagram = null;
+
+                    function getState(diagram) {
+                        if (!diagramState.has(diagram)) {
+                            diagramState.set(diagram, {
+                                scale: 1.0,
+                                translateX: 0,
+                                translateY: 0
+                            });
+                        }
+                        return diagramState.get(diagram);
+                    }
+
+                    function init() {
+                        // Wrap diagram contents in zoom wrapper
+                        document.querySelectorAll('.mermaid, .graphviz').forEach(diagram => {
+                            // Skip if already wrapped
+                            if (diagram.querySelector('.diagram-zoom-wrapper')) return;
+
+                            // Wait a bit for diagrams to render
+                            setTimeout(() => {
+                                const content = diagram.innerHTML;
+                                diagram.innerHTML = '<div class="diagram-zoom-wrapper">' + content + '</div>';
+                            }, 100);
+                        });
+                    }
+
+                    function findDiagramAtPoint(x, y) {
+                        const element = document.elementFromPoint(x, y);
+                        if (!element) return null;
+
+                        // Walk up to find .mermaid or .graphviz container
+                        let current = element;
+                        while (current && current !== document.body) {
+                            if (current.classList &&
+                                (current.classList.contains('mermaid') || current.classList.contains('graphviz'))) {
+                                return current;
+                            }
+                            current = current.parentElement;
+                        }
+                        return null;
+                    }
+
+                    // Find any zoomed diagram (for panning when cursor leaves diagram bounds)
+                    function findZoomedDiagram() {
+                        return document.querySelector('.mermaid.zoomed, .graphviz.zoomed');
+                    }
+
+                    function handlePinch(event) {
+                        const { x, y, scale, phase } = event;
+
+                        if (phase === 'began') {
+                            activePinchDiagram = findDiagramAtPoint(x, y);
+                        }
+
+                        const diagram = activePinchDiagram;
+                        if (!diagram) return;
+
+                        const wrapper = diagram.querySelector('.diagram-zoom-wrapper');
+                        if (!wrapper) return;
+
+                        const state = getState(diagram);
+
+                        if (phase === 'began') {
+                            wrapper.classList.add('zooming');
+                            diagram.classList.add('zoomed');
+                            document.body.classList.add('diagram-zoomed');
+                        }
+
+                        if (phase === 'changed' || phase === 'began') {
+                            const oldScale = state.scale;
+                            let newScale = oldScale * scale;
+                            newScale = Math.max(MIN_SCALE, Math.min(MAX_SCALE, newScale));
+
+                            if (newScale !== oldScale) {
+                                // Get wrapper's current position
+                                const rect = wrapper.getBoundingClientRect();
+                                const wrapperCenterX = rect.left + rect.width / 2;
+                                const wrapperCenterY = rect.top + rect.height / 2;
+
+                                // Vector from wrapper center to pointer
+                                const pointerOffsetX = x - wrapperCenterX;
+                                const pointerOffsetY = y - wrapperCenterY;
+
+                                // Scale change ratio
+                                const scaleRatio = newScale / oldScale;
+
+                                // Adjust translation so the point under the pointer stays fixed
+                                state.translateX -= pointerOffsetX * (scaleRatio - 1);
+                                state.translateY -= pointerOffsetY * (scaleRatio - 1);
+                                state.scale = newScale;
+
+                                applyTransform(wrapper, state);
+                            }
+                        }
+
+                        if (phase === 'ended') {
+                            wrapper.classList.remove('zooming');
+                            // Keep zoomed class if scale != 1
+                            if (Math.abs(state.scale - 1.0) < 0.05) {
+                                state.scale = 1.0;
+                                state.translateX = 0;
+                                state.translateY = 0;
+                                diagram.classList.remove('zoomed');
+                                // Remove body class if no diagrams are zoomed
+                                if (!document.querySelector('.mermaid.zoomed, .graphviz.zoomed')) {
+                                    document.body.classList.remove('diagram-zoomed');
+                                }
+                            }
+                            applyTransform(wrapper, state);
+                            activePinchDiagram = null;
+                        }
+                    }
+
+                    function applyTransform(wrapper, state) {
+                        wrapper.style.transform =
+                            'translate(' + state.translateX + 'px, ' + state.translateY + 'px) ' +
+                            'scale(' + state.scale + ')';
+                    }
+
+                    function resetAtPoint(x, y) {
+                        // Try to find diagram at point, or fall back to any zoomed diagram
+                        let diagram = findDiagramAtPoint(x, y);
+                        if (!diagram) {
+                            diagram = findZoomedDiagram();
+                        }
+                        if (!diagram) return;
+
+                        const wrapper = diagram.querySelector('.diagram-zoom-wrapper');
+                        if (!wrapper) return;
+
+                        const state = getState(diagram);
+                        state.scale = 1.0;
+                        state.translateX = 0;
+                        state.translateY = 0;
+
+                        diagram.classList.remove('zoomed');
+                        applyTransform(wrapper, state);
+
+                        // Remove body class if no diagrams are zoomed
+                        if (!document.querySelector('.mermaid.zoomed, .graphviz.zoomed')) {
+                            document.body.classList.remove('diagram-zoomed');
+                        }
+                    }
+
+                    function handlePan(event) {
+                        const { x, y, deltaX, deltaY, phase } = event;
+
+                        if (phase === 'began') {
+                            // First try point under cursor, then any zoomed diagram
+                            activePanDiagram = findDiagramAtPoint(x, y);
+                            if (!activePanDiagram) {
+                                activePanDiagram = findZoomedDiagram();
+                            }
+                        }
+
+                        const diagram = activePanDiagram;
+                        if (!diagram) return;
+
+                        const wrapper = diagram.querySelector('.diagram-zoom-wrapper');
+                        if (!wrapper) return;
+
+                        const state = getState(diagram);
+
+                        // Only allow panning if zoomed
+                        if (state.scale <= 1.0) {
+                            activePanDiagram = null;
+                            return;
+                        }
+
+                        if (phase === 'began') {
+                            wrapper.classList.add('panning');
+                        }
+
+                        if (phase === 'changed' || phase === 'began') {
+                            state.translateX += deltaX;
+                            state.translateY += deltaY;
+                            applyTransform(wrapper, state);
+                        }
+
+                        if (phase === 'ended') {
+                            wrapper.classList.remove('panning');
+                            activePanDiagram = null;
+                        }
+                    }
+
+                    return {
+                        init: init,
+                        handlePinch: handlePinch,
+                        handlePan: handlePan,
+                        resetAtPoint: resetAtPoint,
+                        findDiagramAtPoint: findDiagramAtPoint
+                    };
+                })();
             </script>
         </body>
         </html>
@@ -123,6 +332,11 @@ struct HTMLGenerator {
             background-color: var(--bg-color);
             margin: 0;
             padding: 0;
+            overflow-x: clip;
+        }
+
+        body.diagram-zoomed {
+            overflow-x: visible;
         }
 
         .markdown-body {
@@ -298,12 +512,34 @@ struct HTMLGenerator {
             padding: 16px;
             margin: 1em 0;
             text-align: center;
-            overflow-x: auto;
+            overflow: visible;
         }
 
         .mermaid svg, .graphviz svg {
             max-width: 100%;
             height: auto;
+        }
+
+        /* Diagram zoom wrapper */
+        .diagram-zoom-wrapper {
+            display: inline-block;
+            transform-origin: center center;
+            transition: transform 0.1s ease-out;
+        }
+
+        .diagram-zoom-wrapper.zooming,
+        .diagram-zoom-wrapper.panning {
+            transition: none;
+        }
+
+        .mermaid.zoomed, .graphviz.zoomed {
+            z-index: 10;
+            position: relative;
+        }
+
+        /* Prevent markdown-body from clipping zoomed diagrams */
+        .markdown-body {
+            overflow: visible;
         }
 
         /* Error display */
