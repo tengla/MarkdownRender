@@ -18,6 +18,14 @@ struct HTMLGenerator {
         \(body)
             </article>
 
+            <!-- Modal overlay for diagram inspection -->
+            <div id="diagram-modal" class="diagram-modal-backdrop" style="display:none;">
+                <div class="diagram-modal-content">
+                    <button class="diagram-modal-close" id="diagram-modal-close">&times;</button>
+                    <div id="diagram-modal-svg"></div>
+                </div>
+            </div>
+
             <!-- Mermaid.js for diagram rendering -->
             <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
 
@@ -68,213 +76,95 @@ struct HTMLGenerator {
                         });
                     }
 
-                    // Setup diagram zoom wrappers
-                    window.diagramZoom.init();
+                    // Setup diagram click-to-open modal
+                    window.diagramModal.init();
                 });
 
-                // Diagram zoom module for pinch-to-zoom on Mermaid and Graphviz diagrams
-                window.diagramZoom = (function() {
-                    const MIN_SCALE = 0.5;
-                    const MAX_SCALE = 4.0;
+                // Diagram modal: click diagram to inspect in overlay
+                window.diagramModal = (function() {
+                    var modal = document.getElementById('diagram-modal');
+                    var svgContainer = document.getElementById('diagram-modal-svg');
+                    var closeBtn = document.getElementById('diagram-modal-close');
+                    var isOpen = false;
 
-                    // Per-diagram state using WeakMap
-                    const diagramState = new WeakMap();
-
-                    // Track active diagram during gestures
-                    let activePinchDiagram = null;
-                    let activePanDiagram = null;
-
-                    function getState(diagram) {
-                        if (!diagramState.has(diagram)) {
-                            diagramState.set(diagram, {
-                                scale: 1.0,
-                                translateX: 0,
-                                translateY: 0
-                            });
-                        }
-                        return diagramState.get(diagram);
-                    }
-
-                    function init() {
-                        // Wrap diagram contents in zoom wrapper
-                        document.querySelectorAll('.mermaid, .graphviz').forEach(diagram => {
-                            // Skip if already wrapped
-                            if (diagram.querySelector('.diagram-zoom-wrapper')) return;
-
-                            // Wait a bit for diagrams to render
-                            setTimeout(() => {
-                                const content = diagram.innerHTML;
-                                diagram.innerHTML = '<div class="diagram-zoom-wrapper">' + content + '</div>';
-                            }, 100);
-                        });
-                    }
-
-                    function findDiagramAtPoint(x, y) {
-                        const element = document.elementFromPoint(x, y);
-                        if (!element) return null;
-
-                        // Walk up to find .mermaid or .graphviz container
-                        let current = element;
-                        while (current && current !== document.body) {
-                            if (current.classList &&
-                                (current.classList.contains('mermaid') || current.classList.contains('graphviz'))) {
-                                return current;
+                    function findDiagram(el) {
+                        var node = el;
+                        while (node && node !== document.body) {
+                            if (node.nodeType === 1 && node.classList &&
+                                (node.classList.contains('mermaid') || node.classList.contains('graphviz'))) {
+                                return node;
                             }
-                            current = current.parentElement;
+                            node = node.parentNode;
                         }
                         return null;
                     }
 
-                    // Find any zoomed diagram (for panning when cursor leaves diagram bounds)
-                    function findZoomedDiagram() {
-                        return document.querySelector('.mermaid.zoomed, .graphviz.zoomed');
+                    function init() {
+                        if (!modal || !svgContainer || !closeBtn) return;
+
+                        // Close on backdrop click
+                        modal.addEventListener('click', function(e) {
+                            if (e.target === modal) hide();
+                        });
+
+                        // Close on button click
+                        closeBtn.addEventListener('click', function() {
+                            hide();
+                        });
+
+                        // Close on Escape
+                        document.addEventListener('keydown', function(e) {
+                            if (e.key === 'Escape' && isOpen) hide();
+                        });
+
+                        // Delegated click on diagrams
+                        document.addEventListener('click', function(e) {
+                            if (isOpen) return;
+
+                            var diagram = findDiagram(e.target);
+                            if (!diagram) return;
+
+                            // Don't open if user is selecting text
+                            var sel = window.getSelection();
+                            if (sel && sel.toString().length > 0) return;
+
+                            var svg = diagram.querySelector('svg');
+                            if (!svg) return;
+
+                            show(svg);
+                        });
                     }
 
-                    function handlePinch(event) {
-                        const { x, y, scale, phase } = event;
-
-                        if (phase === 'began') {
-                            activePinchDiagram = findDiagramAtPoint(x, y);
+                    function show(svg) {
+                        var cloned = svg.cloneNode(true);
+                        // Ensure viewBox exists so the SVG can scale
+                        var w = parseFloat(cloned.getAttribute('width')) || svg.getBBox().width;
+                        var h = parseFloat(cloned.getAttribute('height')) || svg.getBBox().height;
+                        if (!cloned.getAttribute('viewBox') && w && h) {
+                            cloned.setAttribute('viewBox', '0 0 ' + w + ' ' + h);
                         }
-
-                        const diagram = activePinchDiagram;
-                        if (!diagram) return;
-
-                        const wrapper = diagram.querySelector('.diagram-zoom-wrapper');
-                        if (!wrapper) return;
-
-                        const state = getState(diagram);
-
-                        if (phase === 'began') {
-                            wrapper.classList.add('zooming');
-                            diagram.classList.add('zoomed');
-                            document.body.classList.add('diagram-zoomed');
-                        }
-
-                        if (phase === 'changed' || phase === 'began') {
-                            const oldScale = state.scale;
-                            let newScale = oldScale * scale;
-                            newScale = Math.max(MIN_SCALE, Math.min(MAX_SCALE, newScale));
-
-                            if (newScale !== oldScale) {
-                                // Get wrapper's current position
-                                const rect = wrapper.getBoundingClientRect();
-                                const wrapperCenterX = rect.left + rect.width / 2;
-                                const wrapperCenterY = rect.top + rect.height / 2;
-
-                                // Vector from wrapper center to pointer
-                                const pointerOffsetX = x - wrapperCenterX;
-                                const pointerOffsetY = y - wrapperCenterY;
-
-                                // Scale change ratio
-                                const scaleRatio = newScale / oldScale;
-
-                                // Adjust translation so the point under the pointer stays fixed
-                                state.translateX -= pointerOffsetX * (scaleRatio - 1);
-                                state.translateY -= pointerOffsetY * (scaleRatio - 1);
-                                state.scale = newScale;
-
-                                applyTransform(wrapper, state);
-                            }
-                        }
-
-                        if (phase === 'ended') {
-                            wrapper.classList.remove('zooming');
-                            // Keep zoomed class if scale != 1
-                            if (Math.abs(state.scale - 1.0) < 0.05) {
-                                state.scale = 1.0;
-                                state.translateX = 0;
-                                state.translateY = 0;
-                                diagram.classList.remove('zoomed');
-                                // Remove body class if no diagrams are zoomed
-                                if (!document.querySelector('.mermaid.zoomed, .graphviz.zoomed')) {
-                                    document.body.classList.remove('diagram-zoomed');
-                                }
-                            }
-                            applyTransform(wrapper, state);
-                            activePinchDiagram = null;
-                        }
+                        // Remove fixed dimensions so it scales via viewBox
+                        cloned.removeAttribute('width');
+                        cloned.removeAttribute('height');
+                        // Fit based on aspect ratio: wide → fill width, tall → fill height
+                        var isWide = (w / h) >= 1;
+                        cloned.style.width = isWide ? '100%' : 'auto';
+                        cloned.style.height = isWide ? 'auto' : '85vh';
+                        cloned.style.maxWidth = '100%';
+                        cloned.style.maxHeight = '85vh';
+                        svgContainer.innerHTML = '';
+                        svgContainer.appendChild(cloned);
+                        modal.style.display = 'flex';
+                        isOpen = true;
                     }
 
-                    function applyTransform(wrapper, state) {
-                        wrapper.style.transform =
-                            'translate(' + state.translateX + 'px, ' + state.translateY + 'px) ' +
-                            'scale(' + state.scale + ')';
+                    function hide() {
+                        modal.style.display = 'none';
+                        svgContainer.innerHTML = '';
+                        isOpen = false;
                     }
 
-                    function resetAtPoint(x, y) {
-                        // Try to find diagram at point, or fall back to any zoomed diagram
-                        let diagram = findDiagramAtPoint(x, y);
-                        if (!diagram) {
-                            diagram = findZoomedDiagram();
-                        }
-                        if (!diagram) return;
-
-                        const wrapper = diagram.querySelector('.diagram-zoom-wrapper');
-                        if (!wrapper) return;
-
-                        const state = getState(diagram);
-                        state.scale = 1.0;
-                        state.translateX = 0;
-                        state.translateY = 0;
-
-                        diagram.classList.remove('zoomed');
-                        applyTransform(wrapper, state);
-
-                        // Remove body class if no diagrams are zoomed
-                        if (!document.querySelector('.mermaid.zoomed, .graphviz.zoomed')) {
-                            document.body.classList.remove('diagram-zoomed');
-                        }
-                    }
-
-                    function handlePan(event) {
-                        const { x, y, deltaX, deltaY, phase } = event;
-
-                        if (phase === 'began') {
-                            // First try point under cursor, then any zoomed diagram
-                            activePanDiagram = findDiagramAtPoint(x, y);
-                            if (!activePanDiagram) {
-                                activePanDiagram = findZoomedDiagram();
-                            }
-                        }
-
-                        const diagram = activePanDiagram;
-                        if (!diagram) return;
-
-                        const wrapper = diagram.querySelector('.diagram-zoom-wrapper');
-                        if (!wrapper) return;
-
-                        const state = getState(diagram);
-
-                        // Only allow panning if zoomed
-                        if (state.scale <= 1.0) {
-                            activePanDiagram = null;
-                            return;
-                        }
-
-                        if (phase === 'began') {
-                            wrapper.classList.add('panning');
-                        }
-
-                        if (phase === 'changed' || phase === 'began') {
-                            state.translateX += deltaX;
-                            state.translateY += deltaY;
-                            applyTransform(wrapper, state);
-                        }
-
-                        if (phase === 'ended') {
-                            wrapper.classList.remove('panning');
-                            activePanDiagram = null;
-                        }
-                    }
-
-                    return {
-                        init: init,
-                        handlePinch: handlePinch,
-                        handlePan: handlePan,
-                        resetAtPoint: resetAtPoint,
-                        findDiagramAtPoint: findDiagramAtPoint
-                    };
+                    return { init: init };
                 })();
             </script>
         </body>
@@ -333,10 +223,6 @@ struct HTMLGenerator {
             margin: 0;
             padding: 0;
             overflow-x: clip;
-        }
-
-        body.diagram-zoomed {
-            overflow-x: visible;
         }
 
         .markdown-body {
@@ -512,7 +398,13 @@ struct HTMLGenerator {
             padding: 16px;
             margin: 1em 0;
             text-align: center;
-            overflow: visible;
+            overflow: hidden;
+            cursor: zoom-in;
+            transition: box-shadow 0.15s ease;
+        }
+
+        .mermaid:hover, .graphviz:hover {
+            box-shadow: 0 0 0 2px var(--link-color);
         }
 
         .mermaid svg, .graphviz svg {
@@ -520,26 +412,61 @@ struct HTMLGenerator {
             height: auto;
         }
 
-        /* Diagram zoom wrapper */
-        .diagram-zoom-wrapper {
-            display: inline-block;
-            transform-origin: center center;
-            transition: transform 0.1s ease-out;
+        /* Diagram modal overlay */
+        .diagram-modal-backdrop {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            z-index: 1000;
+            background: rgba(0, 0, 0, 0.6);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: zoom-out;
         }
 
-        .diagram-zoom-wrapper.zooming,
-        .diagram-zoom-wrapper.panning {
-            transition: none;
-        }
-
-        .mermaid.zoomed, .graphviz.zoomed {
-            z-index: 10;
+        .diagram-modal-content {
             position: relative;
+            background: var(--bg-color);
+            border-radius: 12px;
+            padding: 32px;
+            width: 95vw;
+            max-height: 92vh;
+            overflow: auto;
+            cursor: default;
         }
 
-        /* Prevent markdown-body from clipping zoomed diagrams */
-        .markdown-body {
-            overflow: visible;
+        #diagram-modal-svg {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            min-height: 60vh;
+        }
+
+        #diagram-modal-svg svg {
+            display: block;
+        }
+
+        .diagram-modal-close {
+            position: absolute;
+            top: 8px;
+            right: 12px;
+            background: none;
+            border: none;
+            font-size: 24px;
+            color: var(--text-secondary);
+            cursor: pointer;
+            line-height: 1;
+            padding: 4px 8px;
+            border-radius: 6px;
+            z-index: 1;
+        }
+
+        .diagram-modal-close:hover {
+            background: var(--code-bg);
+            color: var(--text-color);
         }
 
         /* Error display */

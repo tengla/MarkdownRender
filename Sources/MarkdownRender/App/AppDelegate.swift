@@ -1,7 +1,7 @@
 import AppKit
 import WebKit
 
-class AppDelegate: NSObject, NSApplicationDelegate, NSSearchFieldDelegate, NSGestureRecognizerDelegate {
+class AppDelegate: NSObject, NSApplicationDelegate, NSSearchFieldDelegate {
     var fileURL: URL?
     var watchEnabled: Bool
     var theme: String
@@ -16,11 +16,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSSearchFieldDelegate, NSGes
     var searchField: NSSearchField!
     var searchResultsLabel: NSTextField!
     var searchBarTopConstraint: NSLayoutConstraint!
-
-    // Diagram zoom gesture tracking
-    private var magnificationGesture: NSMagnificationGestureRecognizer?
-    private var panGesture: NSPanGestureRecognizer?
-    private var isGestureActive = false
 
     init(fileURL: URL?, watchEnabled: Bool, theme: String) {
         self.fileURL = fileURL
@@ -134,9 +129,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSSearchFieldDelegate, NSGes
         webView.setValue(false, forKey: "drawsBackground")
 
         window.contentView?.addSubview(webView)
-
-        // Setup diagram zoom gestures
-        setupDiagramZoomGestures()
 
         // Setup search bar
         setupSearchBar()
@@ -527,129 +519,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSSearchFieldDelegate, NSGes
         }
 
         fileWatcher?.resume()
-    }
-
-    // MARK: - Diagram Zoom Gestures
-
-    func gestureRecognizer(_ gestureRecognizer: NSGestureRecognizer, shouldRecognizeSimultaneouslyWith otherGestureRecognizer: NSGestureRecognizer) -> Bool {
-        // Allow pan and magnification to work together
-        return true
-    }
-
-    private func setupDiagramZoomGestures() {
-        // Magnification (pinch) gesture for zooming diagrams
-        magnificationGesture = NSMagnificationGestureRecognizer(target: self, action: #selector(handleMagnification(_:)))
-        webView.addGestureRecognizer(magnificationGesture!)
-
-        // Pan gesture for moving zoomed diagrams (two-finger drag)
-        panGesture = NSPanGestureRecognizer(target: self, action: #selector(handlePan(_:)))
-        panGesture!.numberOfTouchesRequired = 2
-        panGesture!.delegate = self
-        webView.addGestureRecognizer(panGesture!)
-
-        // Double-click gesture to reset diagram zoom
-        let doubleClickGesture = NSClickGestureRecognizer(target: self, action: #selector(handleDoubleClick(_:)))
-        doubleClickGesture.numberOfClicksRequired = 2
-        webView.addGestureRecognizer(doubleClickGesture)
-    }
-
-    @objc private func handleMagnification(_ gesture: NSMagnificationGestureRecognizer) {
-        let locationInView = gesture.location(in: webView)
-
-        // Convert to web coordinates (accounting for webView magnification)
-        let webMagnification = webView.magnification
-        let webX = locationInView.x / webMagnification
-        // Flip Y coordinate (NSView origin is bottom-left, web is top-left)
-        let webY = (webView.bounds.height - locationInView.y) / webMagnification
-
-        let phase: String
-        switch gesture.state {
-        case .began:
-            phase = "began"
-            isGestureActive = true
-        case .changed:
-            phase = "changed"
-        case .ended, .cancelled:
-            phase = "ended"
-            isGestureActive = false
-        default:
-            return
-        }
-
-        // Scale is the delta from the gesture (magnification property is cumulative change)
-        // For pinch-to-zoom, 1.0 + magnification gives the scale factor
-        let scale = 1.0 + gesture.magnification
-
-        // Reset the gesture's magnification to get delta next time
-        if gesture.state == .changed {
-            gesture.magnification = 0
-        }
-
-        sendZoomCommand(x: webX, y: webY, scale: scale, phase: phase)
-    }
-
-    @objc private func handlePan(_ gesture: NSPanGestureRecognizer) {
-        let locationInView = gesture.location(in: webView)
-        let translation = gesture.translation(in: webView)
-
-        let webMagnification = webView.magnification
-        let webX = locationInView.x / webMagnification
-        let webY = (webView.bounds.height - locationInView.y) / webMagnification
-
-        // Translation delta (Y is flipped for web coordinates)
-        let deltaX = translation.x / webMagnification
-        let deltaY = -translation.y / webMagnification
-
-        let phase: String
-        switch gesture.state {
-        case .began:
-            phase = "began"
-        case .changed:
-            phase = "changed"
-        case .ended, .cancelled:
-            phase = "ended"
-        default:
-            return
-        }
-
-        // Reset translation to get delta next time
-        if gesture.state == .changed {
-            gesture.setTranslation(.zero, in: webView)
-        }
-
-        let js = """
-        window.diagramZoom && window.diagramZoom.handlePan({
-            x: \(webX),
-            y: \(webY),
-            deltaX: \(deltaX),
-            deltaY: \(deltaY),
-            phase: '\(phase)'
-        });
-        """
-        webView.evaluateJavaScript(js, completionHandler: nil)
-    }
-
-    @objc private func handleDoubleClick(_ gesture: NSClickGestureRecognizer) {
-        let locationInView = gesture.location(in: webView)
-
-        let webMagnification = webView.magnification
-        let webX = locationInView.x / webMagnification
-        let webY = (webView.bounds.height - locationInView.y) / webMagnification
-
-        let js = "window.diagramZoom && window.diagramZoom.resetAtPoint(\(webX), \(webY));"
-        webView.evaluateJavaScript(js, completionHandler: nil)
-    }
-
-    private func sendZoomCommand(x: Double, y: Double, scale: Double, phase: String) {
-        let js = """
-        window.diagramZoom && window.diagramZoom.handlePinch({
-            x: \(x),
-            y: \(y),
-            scale: \(scale),
-            phase: '\(phase)'
-        });
-        """
-        webView.evaluateJavaScript(js, completionHandler: nil)
     }
 
     func applicationWillTerminate(_ notification: Notification) {
