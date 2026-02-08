@@ -76,6 +76,25 @@ struct HTMLGenerator {
                         });
                     }
 
+                    // Setup copy buttons for code blocks
+                    document.querySelectorAll('.copy-btn').forEach(function(btn) {
+                        btn.addEventListener('click', function() {
+                            var code = btn.parentElement.querySelector('code');
+                            if (!code) return;
+                            var text = code.innerText;
+                            navigator.clipboard.writeText(text).then(function() {
+                                var svg = btn.querySelector('svg');
+                                var origSVG = svg.outerHTML;
+                                btn.innerHTML = '<svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M13.78 4.22a.75.75 0 0 1 0 1.06l-7.25 7.25a.75.75 0 0 1-1.06 0L2.22 9.28a.75.75 0 0 1 1.06-1.06L6 10.94l6.72-6.72a.75.75 0 0 1 1.06 0Z"/></svg>';
+                                btn.classList.add('copied');
+                                setTimeout(function() {
+                                    btn.innerHTML = origSVG;
+                                    btn.classList.remove('copied');
+                                }, 1500);
+                            });
+                        });
+                    });
+
                     // Setup diagram click-to-open modal
                     window.diagramModal.init();
                 });
@@ -303,6 +322,57 @@ struct HTMLGenerator {
             padding: 0;
             font-size: 0.875rem;
             line-height: 1.45;
+        }
+
+        .code-block {
+            position: relative;
+            margin: 1em 0;
+        }
+
+        .code-block pre {
+            margin: 0;
+        }
+
+        .copy-btn {
+            position: absolute;
+            top: 8px;
+            right: 8px;
+            background: var(--code-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 6px;
+            color: var(--text-secondary);
+            cursor: pointer;
+            padding: 4px 8px;
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            font-size: 12px;
+            font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif;
+            line-height: 1;
+            opacity: 0;
+            transition: opacity 0.15s ease;
+            z-index: 1;
+        }
+
+        .code-block:hover .copy-btn {
+            opacity: 1;
+        }
+
+        .copy-btn:hover {
+            background: var(--border-color);
+            color: var(--text-color);
+        }
+
+        .copy-btn.copied {
+            color: #1a7f37;
+            border-color: #1a7f37;
+        }
+
+        @media (prefers-color-scheme: dark) {
+            .copy-btn.copied {
+                color: #3fb950;
+                border-color: #3fb950;
+            }
         }
 
         /* Blockquotes */
